@@ -1,0 +1,23 @@
+# Ambiente local: API + DynamoDB Local. As tabelas são criadas na inicialização
+# (Dynamo__CriarTabelas=true). Não há SNS local: sem Sns__TopicArn, o dispatcher do
+# outbox registra erro e mantém as mensagens pendentes (comportamento esperado em dev).
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+    ports:
+      - "8000:8000"
+
+  api:
+    build: .
+    depends_on:
+      - dynamodb
+    ports:
+      - "8081:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Dynamo__ServiceUrl: http://dynamodb:8000
+      Dynamo__CriarTabelas: "true"
+      # Segredo APENAS para desenvolvimento local. Em produção vem de Secret do Kubernetes.
+      JwtOptions__Secret: segredo-somente-para-desenvolvimento-local-32+
+      Execucao__PermitirFalhaForcada: "true"

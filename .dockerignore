@@ -1,0 +1,9 @@
+**/bin/
+**/obj/
+**/TestResults/
+coverage-report/
+tests/
+chart/
+.git/
+.github/
+*.md

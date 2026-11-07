@@ -1,0 +1,66 @@
+# O namespace, o Gateway (bgt3-gw) e a LoadBalancerConfiguration são recursos
+# COMPARTILHADOS: este chart não os cria, apenas anexa a rota ao Gateway existente.
+namespace: production
+
+image:
+  # Confirmar o nome do repositório ECR com quem provisiona o ECR.
+  repository: 388465176512.dkr.ecr.us-east-1.amazonaws.com/wrench/execucao-api
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicas: 1
+containerPort: 8080
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 60
+
+gateway:
+  name: bgt3-gw
+  # Quando preenchido, a rota é anexada ao listener HTTPS (mesma regra do os-service).
+  certificateArn: ''
+
+httpRoute:
+  hostname: api.bgt3.com.br
+  pathPrefix: /api/v1/execucoes
+
+serviceAccount:
+  create: true
+  name: wrench-execucao-sa
+  # Role IRSA com permissão em DynamoDB (3 tabelas) e SNS Publish.
+  roleArn: ''
+
+aws:
+  region: us-east-1
+
+dynamo:
+  execucaoTable: wrench-execucao
+  outboxTable: wrench-execucao-outbox
+  idempotenciaTable: wrench-execucao-idempotencia
+
+sns:
+  topicArn: ''
+
+# Obrigatório no deploy (--set jwt.secret=...). Deve ser o mesmo segredo que assina os tokens
+# emitidos pela Lambda de autenticação.
+jwt:
+  secret: ''
+  issuer: Wrench Auto Repair
+  audience: Wrench Auto Repair
+
+execucao:
+  # Nunca habilitar em produção: expõe o endpoint que força a falha da execução.
+  permitirFalhaForcada: false
+
+# licenseKey vazio = a aplicação não exporta telemetria (sem quebrar o deploy).
+newRelic:
+  otlpEndpoint: https://otlp.nr-data.net:4318
+  otlpProtocol: http/protobuf
+  licenseKey: ''
