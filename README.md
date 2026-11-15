@@ -50,6 +50,13 @@ flowchart LR
 
 Atributos de mensagem SNS: `messageId`, `tipo`, `correlationId`, `traceparent`.
 
+O `SqsComandoConsumer` lê `Sqs:QueueUrl` por long polling e roteia pelo atributo `tipo`. Como a
+assinatura usa `raw_message_delivery`, o corpo é o JSON puro do contrato. A mensagem sai da fila
+quando o resultado é definitivo — incluindo recusa por regra de negócio, já que reentregar não muda
+a decisão. **Exceção não apaga**: a mensagem volta para a fila e, esgotadas as entregas, o SQS a
+move para a DLQ, que tem alerta no New Relic. Sem `Sqs:QueueUrl` o consumidor não sobe, o que
+permite rodar a API sem mensageria.
+
 Compensação: `CancelarExecucao` remove da fila uma execução pendente ou em andamento
 (`Removida`). Se não houver execução, é um no-op; se já foi concluída, é conflito.
 
@@ -139,11 +146,6 @@ helm upgrade --install wrench-execucao ./chart -n production \
 
 ## Pendências conhecidas
 
-- **O consumidor da fila SQS ainda não existe.** É o que falta para o fluxo feliz da Saga fechar: o
-  `IniciarExecucao` sai do OS Service, chega em `wrench-execucao-commands` e fica lá. O processamento
-  em si já está pronto e com idempotência (`ExecucaoService.IniciarAsync/CancelarAsync`), e o chart já
-  expõe `Sqs__QueueUrl` — falta só ler a fila e despachar. O `SqsSagaConsumer` do `app-k8s` serve de
-  referência: SDK da AWS, roteamento pelo message attribute `tipo`, corpo em JSON puro.
 - **Contratos ainda espelhados** em `application/Contracts/Mensagens.cs`. O shape é idêntico ao do
   pacote `Wrench.Contracts 1.0.0`, então a integração funciona; trocar por `PackageReference` é
   higiene, não bloqueio. Exige conceder ao repositório acesso de leitura ao pacote no GitHub Packages.

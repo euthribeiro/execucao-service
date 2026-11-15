@@ -27,12 +27,39 @@ public class SnsOptions
     public string? ServiceUrl { get; set; }
 }
 
+public class SqsOptions
+{
+    public const string Secao = "Sqs";
+
+    /// <summary>Fila de comandos da Saga. Vazio mantém o consumidor desligado.</summary>
+    public string QueueUrl { get; set; } = string.Empty;
+
+    public string? ServiceUrl { get; set; }
+
+    public int MensagensPorLeitura { get; set; } = 10;
+
+    public int EsperaLongaSegundos { get; set; } = 20;
+}
+
 public class OutboxOptions
 {
     public const string Secao = "Outbox";
 
     public int IntervaloSegundos { get; set; } = 2;
     public int TamanhoLote { get; set; } = 25;
+}
+
+/// <summary>
+/// Message attributes que viajam junto do corpo. O <c>tipo</c> é o que o filter policy da
+/// assinatura SNS avalia e o que o consumidor usa para rotear.
+/// </summary>
+public static class AtributosMensagem
+{
+    public const string MessageId = "messageId";
+    public const string Tipo = "tipo";
+    public const string CorrelationId = "correlationId";
+    public const string Traceparent = "traceparent";
+    public const string ContagemDeEntregas = "ApproximateReceiveCount";
 }
 
 public static class Indices

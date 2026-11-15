@@ -49,7 +49,7 @@ sns:
   topicArn: ''
 
 # Fila de comandos da Saga (IniciarExecucao e CancelarExecucao). Vazio mantém o
-# consumidor desligado, que é o comportamento até ele ser implementado.
+# consumidor desligado, o que permite subir a API sem mensageria.
 sqs:
   queueUrl: ''
 

@@ -34,7 +34,8 @@ public abstract class ExecucaoApiFactoryBase(bool permitirFalhaForcada) : WebApp
             foreach (var hospedado in services
                          .Where(d => d.ServiceType == typeof(IHostedService) &&
                                      (d.ImplementationType == typeof(OutboxDispatcher) ||
-                                      d.ImplementationType == typeof(DynamoTableInitializer)))
+                                      d.ImplementationType == typeof(DynamoTableInitializer) ||
+                                      d.ImplementationType == typeof(SqsComandoConsumer)))
                          .ToList())
             {
                 services.Remove(hospedado);
