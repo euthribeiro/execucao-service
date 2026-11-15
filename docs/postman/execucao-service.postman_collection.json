@@ -1,0 +1,153 @@
+{
+  "info": {
+    "name": "Wrench Auto Repair — Execucao Service",
+    "description": "Fila de execucao das ordens de servico. Todas as rotas exigem JWT com perfil Admin ou Funcionario; a rota de falha forcada exige Admin e so responde quando Execucao__PermitirFalhaForcada estiver habilitado.\n\nDefina as variaveis baseUrl, token e ordemServicoId antes de usar.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://api.bgt3.com.br",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ordemServicoId",
+      "value": "00000000-0000-0000-0000-000000000000",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Listar fila de execucao",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/execucoes?status=Pendente&limite=50",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "execucoes"],
+          "query": [
+            {
+              "key": "status",
+              "value": "Pendente",
+              "description": "Pendente, EmAndamento, Concluida ou Falhou. Padrao: Pendente."
+            },
+            {
+              "key": "limite",
+              "value": "50",
+              "description": "De 1 a 100. Padrao: 50."
+            }
+          ]
+        },
+        "description": "Lista a fila por status, da mais antiga para a mais recente. Status invalido devolve 400."
+      },
+      "response": []
+    },
+    {
+      "name": "Obter execucao da OS",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/execucoes/{{ordemServicoId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "execucoes", "{{ordemServicoId}}"]
+        },
+        "description": "Consulta a execucao de uma ordem de servico. Devolve 404 quando nao existe."
+      },
+      "response": []
+    },
+    {
+      "name": "Assumir execucao",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"mecanico\": \"Joao Paulo\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/execucoes/{{ordemServicoId}}/assumir",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "execucoes", "{{ordemServicoId}}", "assumir"]
+        },
+        "description": "O mecanico assume uma execucao pendente. Quando o corpo e omitido, o nome vem das claims do token. Devolve 204."
+      },
+      "response": []
+    },
+    {
+      "name": "Concluir execucao",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/execucoes/{{ordemServicoId}}/concluir",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "execucoes", "{{ordemServicoId}}", "concluir"]
+        },
+        "description": "Conclui a execucao em andamento e publica ExecucaoConcluida no topico wrench-execucao-events, fechando o fluxo feliz da Saga. Devolve 204."
+      },
+      "response": []
+    },
+    {
+      "name": "Forcar falha da execucao (demonstracao da compensacao)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"motivo\": \"Peca indisponivel no estoque\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/v1/execucoes/{{ordemServicoId}}/falhar",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "v1", "execucoes", "{{ordemServicoId}}", "falhar"]
+        },
+        "description": "Publica ExecucaoFalhou e dispara a compensacao da Saga, que estorna o pagamento no Billing. Exige perfil Admin. Devolve 404 quando Execucao__PermitirFalhaForcada esta desabilitado, que e o padrao."
+      },
+      "response": []
+    },
+    {
+      "name": "Health — readiness",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": {
+          "type": "noauth"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/health/ready",
+          "host": ["{{baseUrl}}"],
+          "path": ["health", "ready"]
+        },
+        "description": "Usado pelo readinessProbe do chart. Nao exige autenticacao."
+      },
+      "response": []
+    }
+  ]
+}
