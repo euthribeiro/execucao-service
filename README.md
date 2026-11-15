@@ -55,7 +55,9 @@ Compensação: `CancelarExecucao` remove da fila uma execução pendente ou em a
 
 ## API (`/api/v1/execucoes`)
 
-Roles `Admin` ou `Funcionario`. Documentação interativa em `/docs-ui` (OpenAPI em `/openapi/v1.json`).
+Roles `Admin` ou `Funcionario`. Documentação interativa em `/docs-ui` (OpenAPI em `/openapi/v1.json`)
+e collection Postman em [`docs/postman/execucao-service.postman_collection.json`](docs/postman/execucao-service.postman_collection.json),
+com as variáveis `baseUrl`, `token` e `ordemServicoId`.
 
 | Método | Rota | Descrição |
 |---|---|---|

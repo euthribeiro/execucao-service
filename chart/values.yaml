@@ -48,6 +48,11 @@ dynamo:
 sns:
   topicArn: ''
 
+# Fila de comandos da Saga (IniciarExecucao e CancelarExecucao). Vazio mantém o
+# consumidor desligado, que é o comportamento até ele ser implementado.
+sqs:
+  queueUrl: ''
+
 # Obrigatório no deploy (--set jwt.secret=...). Deve ser o mesmo segredo que assina os tokens
 # emitidos pela Lambda de autenticação.
 jwt:

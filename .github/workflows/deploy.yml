@@ -1,0 +1,155 @@
+name: Deploy Execucao Service
+
+env:
+  CHART_DIR: ./chart
+  OUTPUTS_DIR: ./.github/terraform-outputs
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Ambiente de execução (homologacao ou production)'
+        required: true
+        type: string
+
+      hostname:
+        description: 'Hostname público da API neste ambiente'
+        required: true
+        type: string
+
+      release_name:
+        description: 'Nome do release Helm neste ambiente'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calcular próxima versão
+        id: tag
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: patch
+          tag_prefix: ''
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_wrapper: false
+
+      - name: Ler outputs da infraestrutura
+        id: infra
+        run: |
+          terraform -chdir="$OUTPUTS_DIR" init -input=false
+          terraform -chdir="$OUTPUTS_DIR" apply -auto-approve -input=false \
+            -var="tfc_organization=${{ vars.TFC_ORGANIZATION }}" \
+            -var="infra_workspace=${{ vars.TFC_WORKSPACE_INFRA }}" \
+            -var="ecr_workspace=${{ vars.TFC_WORKSPACE_ECR }}" \
+            -var="mensageria_workspace=${{ vars.TFC_WORKSPACE_MENSAGERIA }}" \
+            -var="dynamodb_workspace=${{ vars.TFC_WORKSPACE_DYNAMODB }}"
+          for saida in cluster_name api_repository chart_repository chart_repository_url \
+                       role_arn topic_arn queue_url \
+                       tabela_execucao tabela_outbox tabela_idempotencia; do
+            echo "$saida=$(terraform -chdir="$OUTPUTS_DIR" output -raw "$saida")" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Configurar credenciais AWS
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login no Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Kubeconfig do EKS
+        env:
+          CLUSTER_NAME: ${{ steps.infra.outputs.cluster_name }}
+        run: aws eks update-kubeconfig --region ${{ vars.AWS_REGION }} --name "$CLUSTER_NAME"
+
+      - name: Build e push da imagem
+        env:
+          ECR_REPOSITORY: ${{ steps.infra.outputs.api_repository }}
+          IMAGE_TAG: ${{ steps.tag.outputs.new_version }}
+        run: |
+          docker build -t "$ECR_REPOSITORY:$IMAGE_TAG" -f ./Dockerfile .
+          docker push "$ECR_REPOSITORY:$IMAGE_TAG"
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v5
+
+      - name: Empacotar e publicar o chart
+        env:
+          ECR_REPOSITORY: ${{ steps.infra.outputs.chart_repository }}
+          VERSION: ${{ steps.tag.outputs.new_version }}
+        run: |
+          helm package "$CHART_DIR" --version "$VERSION" --app-version "$VERSION"
+          CHART_PACKAGE=$(ls wrench-execucao-*.tgz)
+          helm push "$CHART_PACKAGE" "oci://$ECR_REPOSITORY"
+
+      - name: Helm deploy
+        env:
+          ECR_REPOSITORY: ${{ steps.infra.outputs.chart_repository_url }}
+          API_REPO: ${{ steps.infra.outputs.api_repository }}
+          VERSION: ${{ steps.tag.outputs.new_version }}
+          ROLE_ARN: ${{ steps.infra.outputs.role_arn }}
+          TOPIC_ARN: ${{ steps.infra.outputs.topic_arn }}
+          QUEUE_URL: ${{ steps.infra.outputs.queue_url }}
+          TABELA_EXECUCAO: ${{ steps.infra.outputs.tabela_execucao }}
+          TABELA_OUTBOX: ${{ steps.infra.outputs.tabela_outbox }}
+          TABELA_IDEMPOTENCIA: ${{ steps.infra.outputs.tabela_idempotencia }}
+          REGION: ${{ vars.AWS_REGION }}
+          JWT_SIGNING_KEY: ${{ secrets.JWT_SIGNING_KEY }}
+          JWT_ISSUER: ${{ vars.JWT_ISSUER }}
+          JWT_AUDIENCE: ${{ vars.JWT_AUDIENCE }}
+          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+          PERMITIR_FALHA_FORCADA: ${{ vars.EXECUCAO_PERMITIR_FALHA_FORCADA }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          HOSTNAME: ${{ inputs.hostname }}
+          RELEASE: ${{ inputs.release_name }}
+        run: |
+          helm upgrade --install "$RELEASE" \
+            "oci://$ECR_REPOSITORY" \
+            --version "$VERSION" \
+            -n "$ENVIRONMENT" --create-namespace \
+            --set namespace="$ENVIRONMENT" \
+            --set image.repository="$API_REPO" \
+            --set image.tag="$VERSION" \
+            --set httpRoute.hostname="$HOSTNAME" \
+            --set serviceAccount.roleArn="$ROLE_ARN" \
+            --set aws.region="$REGION" \
+            --set sns.topicArn="$TOPIC_ARN" \
+            --set sqs.queueUrl="$QUEUE_URL" \
+            --set dynamo.execucaoTable="$TABELA_EXECUCAO" \
+            --set dynamo.outboxTable="$TABELA_OUTBOX" \
+            --set dynamo.idempotenciaTable="$TABELA_IDEMPOTENCIA" \
+            --set jwt.secret="$JWT_SIGNING_KEY" \
+            --set jwt.issuer="$JWT_ISSUER" \
+            --set jwt.audience="$JWT_AUDIENCE" \
+            --set execucao.permitirFalhaForcada="${PERMITIR_FALHA_FORCADA:-false}" \
+            --set newRelic.licenseKey="$NEW_RELIC_LICENSE_KEY" \
+            --wait --timeout 5m
+
+      - name: Diagnóstico quando o rollout falha
+        if: failure()
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          RELEASE: ${{ inputs.release_name }}
+        run: |
+          kubectl -n "$ENVIRONMENT" get pods -o wide || true
+          kubectl -n "$ENVIRONMENT" get events --sort-by=.lastTimestamp | tail -30 || true
+          kubectl -n "$ENVIRONMENT" logs -l app.kubernetes.io/instance="$RELEASE" --tail=100 || true
