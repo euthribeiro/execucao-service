@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
   packages: read
 
 jobs:
@@ -25,3 +25,13 @@ jobs:
       sonar_exclusions: '**/obj/**,**/bin/**,**/Program.cs'
       helm_chart: chart
       helm_lint_args: '--set jwt.secret=ci'
+
+  deploy-producao:
+    if: github.ref == 'refs/heads/main'
+    needs: build-test
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit
+    with:
+      environment: 'production'
+      hostname: 'api.bgt3.com.br'
+      release_name: 'wrench-execucao'
