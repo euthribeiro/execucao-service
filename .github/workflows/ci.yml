@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   # Build, testes, gate de cobertura, SonarCloud e validação do chart vivem no workflow
