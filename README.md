@@ -118,9 +118,17 @@ compilador ficam fora da métrica. O CI falha abaixo de 80%.
 
 ## Deploy
 
+**Automatizado.** O push para `main` roda o CI (build, testes, cobertura, SonarCloud e `helm lint`)
+e, se passar, o job `deploy-producao` publica a imagem e o chart no ECR e aplica no EKS. A
+infraestrutura que o deploy consome — cluster, tabelas DynamoDB, tópico, fila e role IRSA — é
+provisionada pelo Terraform do `infra-k8s`, fora deste repositório; os valores vêm dos outputs do
+HCP Terraform em `.github/terraform-outputs/`.
+
 Imagem: `Dockerfile` (multi-stage). Chart Helm em [`chart/`](chart): cria Deployment, Service, HPA,
 ServiceAccount (IRSA), Secrets e a rota `/api/v1/execucoes` no Gateway compartilhado `bgt3-gw`.
 Namespace e Gateway **não** pertencem a este chart.
+
+Para aplicar à mão:
 
 ```bash
 helm upgrade --install wrench-execucao ./chart -n production \
@@ -131,9 +139,13 @@ helm upgrade --install wrench-execucao ./chart -n production \
 
 ## Pendências conhecidas
 
-- **Transporte de mensagens:** as mensagens de entrada (`IniciarExecucao`/`CancelarExecucao`) são
-  processadas por `ExecucaoService.IniciarAsync/CancelarAsync`, já com idempotência. A ligação com a
-  fila SQS (consumers do MassTransit 8.x) depende do pacote `Wrench.Contracts` v1 e da fila/DLQ
-  provisionadas; os contratos locais em `application/Contracts` serão trocados pelo pacote.
-- **Infraestrutura AWS:** tabelas, tópico/fila, ECR e role IRSA são provisionados via Terraform fora
-  deste repositório.
+- **O consumidor da fila SQS ainda não existe.** É o que falta para o fluxo feliz da Saga fechar: o
+  `IniciarExecucao` sai do OS Service, chega em `wrench-execucao-commands` e fica lá. O processamento
+  em si já está pronto e com idempotência (`ExecucaoService.IniciarAsync/CancelarAsync`), e o chart já
+  expõe `Sqs__QueueUrl` — falta só ler a fila e despachar. O `SqsSagaConsumer` do `app-k8s` serve de
+  referência: SDK da AWS, roteamento pelo message attribute `tipo`, corpo em JSON puro.
+- **Contratos ainda espelhados** em `application/Contracts/Mensagens.cs`. O shape é idêntico ao do
+  pacote `Wrench.Contracts 1.0.0`, então a integração funciona; trocar por `PackageReference` é
+  higiene, não bloqueio. Exige conceder ao repositório acesso de leitura ao pacote no GitHub Packages.
+- **Integração ponta a ponta ainda não exercitada contra a AWS real**: tópico, fila e tabelas só
+  existem depois que o Terraform do `infra-k8s` for aplicado.
