@@ -22,7 +22,7 @@ jobs:
       cobertura_classe_filtros: '-Program;-*.Program'
       sonar_project_key: euthribeiro_execucao-service
       sonar_organization: euthribeiro
-      sonar_exclusions: '**/obj/**,**/bin/**,**/Program.cs'
+      sonar_exclusions: '**/obj/**,**/bin/**,**/Program.cs,.github/**'
       helm_chart: chart
       helm_lint_args: '--set jwt.secret=ci'
 
