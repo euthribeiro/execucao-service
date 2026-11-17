@@ -1,0 +1,105 @@
+name: Destruir ambiente do Execucao Service
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmacao:
+        description: 'Digite DESTRUIR para remover o release de produção deste serviço'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: execucao-service-ambiente-production
+  cancel-in-progress: false
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      OUTPUTS_DIR: ./.github/terraform-outputs
+      ENVIRONMENT: production
+      RELEASE: wrench-execucao
+
+    steps:
+      - name: Validar confirmação e branch
+        env:
+          CONFIRMACAO: ${{ inputs.confirmacao }}
+        run: |
+          if [ "$CONFIRMACAO" != "DESTRUIR" ]; then
+            echo "::error::Confirmação inválida. Digite DESTRUIR para prosseguir."
+            exit 1
+          fi
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Dispare este workflow a partir de main."
+            exit 1
+          fi
+          echo "### Destruição do release $RELEASE no namespace $ENVIRONMENT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_wrapper: false
+
+      - name: Ler nome do cluster
+        id: infra
+        run: |
+          terraform -chdir="$OUTPUTS_DIR" init -input=false
+          if terraform -chdir="$OUTPUTS_DIR" apply -auto-approve -input=false \
+            -var="tfc_organization=${{ vars.TFC_ORGANIZATION }}" \
+            -var="infra_workspace=${{ vars.TFC_WORKSPACE_INFRA }}" \
+            -var="ecr_workspace=${{ vars.TFC_WORKSPACE_ECR }}" \
+            -var="mensageria_workspace=${{ vars.TFC_WORKSPACE_MENSAGERIA }}" \
+            -var="dynamodb_workspace=${{ vars.TFC_WORKSPACE_DYNAMODB }}"; then
+            echo "cluster_name=$(terraform -chdir="$OUTPUTS_DIR" output -raw cluster_name)" >> "$GITHUB_OUTPUT"
+            echo "existe=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "existe=false" >> "$GITHUB_OUTPUT"
+            echo "- Outputs de infraestrutura indisponíveis: nada a remover no cluster." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Configurar credenciais AWS
+        if: steps.infra.outputs.existe == 'true'
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Verificar cluster
+        id: cluster
+        if: steps.infra.outputs.existe == 'true'
+        env:
+          CLUSTER_NAME: ${{ steps.infra.outputs.cluster_name }}
+          REGION: ${{ vars.AWS_REGION }}
+        run: |
+          if aws eks describe-cluster --name "$CLUSTER_NAME" > /dev/null 2>&1; then
+            aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER_NAME"
+            echo "existe=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "existe=false" >> "$GITHUB_OUTPUT"
+            echo "- Cluster $CLUSTER_NAME não existe: nada a remover." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Set up Helm CLI
+        if: steps.cluster.outputs.existe == 'true'
+        uses: azure/setup-helm@v5
+
+      - name: Remover release
+        if: steps.cluster.outputs.existe == 'true'
+        run: |
+          if helm status "$RELEASE" -n "$ENVIRONMENT" > /dev/null 2>&1; then
+            helm uninstall "$RELEASE" -n "$ENVIRONMENT" --wait --timeout 10m
+            echo "- Release $RELEASE removido do namespace $ENVIRONMENT." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- Release $RELEASE não encontrado no namespace $ENVIRONMENT." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "- O namespace $ENVIRONMENT é removido pelo destroy do app-k8s, não por este workflow." >> "$GITHUB_STEP_SUMMARY"
