@@ -152,4 +152,5 @@ jobs:
         run: |
           kubectl -n "$ENVIRONMENT" get pods -o wide || true
           kubectl -n "$ENVIRONMENT" get events --sort-by=.lastTimestamp | tail -30 || true
-          kubectl -n "$ENVIRONMENT" logs -l app.kubernetes.io/instance="$RELEASE" --tail=100 || true
+          kubectl -n "$ENVIRONMENT" logs -l app="$RELEASE" --tail=200 --all-containers --prefix || true
+          kubectl -n "$ENVIRONMENT" logs -l app="$RELEASE" --tail=200 --previous || true
