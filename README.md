@@ -119,10 +119,18 @@ compilador ficam fora da métrica. O CI falha abaixo de 80%.
 ## Deploy
 
 **Automatizado.** O push para `main` roda o CI (build, testes, cobertura, SonarCloud e `helm lint`)
-e, se passar, o job `deploy-producao` publica a imagem e o chart no ECR e aplica no EKS. A
+e, se passar, o job `deploy-producao` publica a imagem e o chart no ECR e aplica no EKS. O mesmo
+CI aceita **Run workflow** manual: disparado na branch `main`, também faz o deploy, e é assim que a
+etapa 3 do orquestrador de provisionamento do `infra-k8s` sobe este serviço. A
 infraestrutura que o deploy consome — cluster, tabelas DynamoDB, tópico, fila e role IRSA — é
 provisionada pelo Terraform do `infra-k8s`, fora deste repositório; os valores vêm dos outputs do
 HCP Terraform em `.github/terraform-outputs/`.
+
+`.github/workflows/destroy.yml` faz o caminho de volta: **Run workflow** na `main` com
+`confirmacao=DESTRUIR` desinstala o release `wrench-execucao` do namespace `production`. O
+namespace fica de pé, porque é o `destroy.yml` do `app-k8s` que o remove — por isso a etapa 2 do
+orquestrador de destruição do `infra-k8s` chama este workflow antes da aplicação. Sem cluster ou
+sem os outputs do HCP Terraform, ele encerra sem erro.
 
 Imagem: `Dockerfile` (multi-stage). Chart Helm em [`chart/`](chart): cria Deployment, Service, HPA,
 ServiceAccount (IRSA), Secrets e a rota `/api/v1/execucoes` no Gateway compartilhado `bgt3-gw`.
